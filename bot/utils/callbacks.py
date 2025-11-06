@@ -8,7 +8,8 @@ from bot.keyboards.inline import get_repo_hash
 async def get_repo_key_by_hash(repo_hash: str, chat_id: int) -> Optional[str]:
     """Получает repo_key по хешу"""
     repos = await get_all_repositories()
-    for repo_key, repo_data in repos.items():
+    for storage_key, repo_data in repos.items():
+        repo_key = repo_data.get("repo_key", storage_key.split(":")[0])
         if get_repo_hash(repo_key) == repo_hash and repo_data.get("chat_id") == chat_id:
             return repo_key
     return None
@@ -37,13 +38,9 @@ async def get_repo_and_check_access(
         await callback.answer("❌ Репозиторий не найден.", show_alert=True)
         return None
     
-    repo_data = await get_repository(repo_key)
+    repo_data = await get_repository(repo_key, chat_id)
     if not repo_data:
         await callback.answer("❌ Репозиторий не найден.", show_alert=True)
-        return None
-    
-    if check_access and repo_data.get("chat_id") != chat_id:
-        await callback.answer("❌ У вас нет прав на этот репозиторий.", show_alert=True)
         return None
     
     return repo_key, repo_data

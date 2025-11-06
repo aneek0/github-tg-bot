@@ -38,20 +38,14 @@ async def handle_github_url(message: Message) -> None:
         
         repo_key = get_repo_key(owner, repo)
         
-        # Проверяем, не добавлен ли уже
-        existing_repo = await get_repository(repo_key)
+        # Проверяем, не добавлен ли уже этим пользователем
+        existing_repo = await get_repository(repo_key, message.chat.id)
         if existing_repo:
-            if existing_repo.get("chat_id") == message.chat.id:
-                await message.answer(
-                    f"⚠️ Репозиторий {html.code(repo_key)} уже добавлен.\n"
-                    f"Используйте /settings {owner} {repo} для настройки."
-                )
-                continue
-            else:
-                await message.answer(
-                    f"⚠️ Репозиторий {html.code(repo_key)} уже отслеживается другим пользователем."
-                )
-                continue
+            await message.answer(
+                f"⚠️ Репозиторий {html.code(repo_key)} уже добавлен.\n"
+                f"Используйте /settings {owner} {repo} для настройки."
+            )
+            continue
         
         # Проверяем, существует ли репозиторий
         repo_info = await github_client.get_repository_info(owner, repo)
@@ -64,7 +58,7 @@ async def handle_github_url(message: Message) -> None:
         # Добавляем репозиторий
         success = await add_repository(repo_key, message.chat.id)
         if success:
-            repo_data = await get_repository(repo_key)
+            repo_data = await get_repository(repo_key, message.chat.id)
             events = repo_data.get("events", {}) if repo_data else {}
             await message.answer(
                 f"✅ Репозиторий {html.code(repo_key)} успешно добавлен!\n\n"

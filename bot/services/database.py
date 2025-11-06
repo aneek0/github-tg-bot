@@ -69,14 +69,23 @@ async def _save_db(data: Dict[str, Any]) -> None:
             raise
 
 
+def _get_repo_storage_key(repo_key: str, chat_id: int) -> str:
+    """Генерирует ключ для хранения репозитория в базе данных"""
+    return f"{repo_key}:{chat_id}"
+
+
 async def add_repository(repo_key: str, chat_id: int, github_token: Optional[str] = None) -> bool:
     """Добавляет репозиторий в базу данных"""
     try:
         db = await _load_db()
-        if repo_key in db["repositories"]:
+        storage_key = _get_repo_storage_key(repo_key, chat_id)
+        
+        # Проверяем, не добавлен ли уже этот репозиторий этим пользователем
+        if storage_key in db["repositories"]:
             return False
         
-        db["repositories"][repo_key] = {
+        db["repositories"][storage_key] = {
+            "repo_key": repo_key,
             "chat_id": chat_id,
             "events": get_default_events(),
             "last_commit_sha": None,
@@ -103,14 +112,15 @@ async def add_repository(repo_key: str, chat_id: int, github_token: Optional[str
         return False
 
 
-async def remove_repository(repo_key: str) -> bool:
+async def remove_repository(repo_key: str, chat_id: int) -> bool:
     """Удаляет репозиторий из базы данных"""
     try:
         db = await _load_db()
-        if repo_key not in db["repositories"]:
+        storage_key = _get_repo_storage_key(repo_key, chat_id)
+        if storage_key not in db["repositories"]:
             return False
         
-        del db["repositories"][repo_key]
+        del db["repositories"][storage_key]
         # Статистику оставляем для истории
         await _save_db(db)
         return True
@@ -119,14 +129,29 @@ async def remove_repository(repo_key: str) -> bool:
         return False
 
 
-async def get_repository(repo_key: str) -> Optional[Dict[str, Any]]:
-    """Получает информацию о репозитории"""
+async def get_repository(repo_key: str, chat_id: int) -> Optional[Dict[str, Any]]:
+    """Получает информацию о репозитории для конкретного пользователя"""
     try:
         db = await _load_db()
-        return db["repositories"].get(repo_key)
+        storage_key = _get_repo_storage_key(repo_key, chat_id)
+        return db["repositories"].get(storage_key)
     except Exception as e:
         logger.error(f"Ошибка получения репозитория: {e}")
         return None
+
+
+async def get_repositories_by_repo_key(repo_key: str) -> Dict[str, Dict[str, Any]]:
+    """Получает все репозитории для данного repo_key (всех пользователей)"""
+    try:
+        db = await _load_db()
+        return {
+            storage_key: repo_data
+            for storage_key, repo_data in db["repositories"].items()
+            if repo_data.get("repo_key") == repo_key
+        }
+    except Exception as e:
+        logger.error(f"Ошибка получения репозиториев по ключу: {e}")
+        return {}
 
 
 async def get_all_repositories() -> Dict[str, Dict[str, Any]]:
@@ -143,24 +168,26 @@ async def get_user_repositories(chat_id: int) -> Dict[str, Dict[str, Any]]:
     """Получает все репозитории пользователя"""
     try:
         db = await _load_db()
-        return {
-            repo_key: repo_data
-            for repo_key, repo_data in db["repositories"].items()
-            if repo_data.get("chat_id") == chat_id
-        }
+        result = {}
+        for storage_key, repo_data in db["repositories"].items():
+            if repo_data.get("chat_id") == chat_id:
+                repo_key = repo_data.get("repo_key", storage_key.split(":")[0])
+                result[repo_key] = repo_data
+        return result
     except Exception as e:
         logger.error(f"Ошибка получения репозиториев пользователя: {e}")
         return {}
 
 
-async def update_repository_events(repo_key: str, events: Dict[str, Any]) -> bool:
+async def update_repository_events(repo_key: str, chat_id: int, events: Dict[str, Any]) -> bool:
     """Обновляет настройки событий для репозитория"""
     try:
         db = await _load_db()
-        if repo_key not in db["repositories"]:
+        storage_key = _get_repo_storage_key(repo_key, chat_id)
+        if storage_key not in db["repositories"]:
             return False
         
-        db["repositories"][repo_key]["events"] = events
+        db["repositories"][storage_key]["events"] = events
         await _save_db(db)
         return True
     except Exception as e:
@@ -170,6 +197,7 @@ async def update_repository_events(repo_key: str, events: Dict[str, Any]) -> boo
 
 async def update_event_status(
     repo_key: str,
+    chat_id: int,
     event_path: str,
     status: bool
 ) -> bool:
@@ -177,15 +205,17 @@ async def update_event_status(
     
     Args:
         repo_key: Ключ репозитория (owner/repo)
+        chat_id: ID чата пользователя
         event_path: Путь к событию (например, "commits", "issues.opened", "pull_requests.opened")
         status: Новый статус (True/False)
     """
     try:
         db = await _load_db()
-        if repo_key not in db["repositories"]:
+        storage_key = _get_repo_storage_key(repo_key, chat_id)
+        if storage_key not in db["repositories"]:
             return False
         
-        events = db["repositories"][repo_key]["events"]
+        events = db["repositories"][storage_key]["events"]
         path_parts = event_path.split(".")
         
         # Навигация по вложенной структуре
@@ -209,23 +239,27 @@ async def update_event_status(
 
 
 async def update_last_commit_sha(repo_key: str, commit_sha: str) -> None:
-    """Обновляет SHA последнего коммита"""
+    """Обновляет SHA последнего коммита для всех пользователей, отслеживающих репозиторий"""
     try:
         db = await _load_db()
-        if repo_key in db["repositories"]:
-            db["repositories"][repo_key]["last_commit_sha"] = commit_sha
-            await _save_db(db)
+        repos = await get_repositories_by_repo_key(repo_key)
+        for storage_key in repos.keys():
+            if storage_key in db["repositories"]:
+                db["repositories"][storage_key]["last_commit_sha"] = commit_sha
+        await _save_db(db)
     except Exception as e:
         logger.error(f"Ошибка обновления SHA коммита: {e}")
 
 
 async def update_last_star_count(repo_key: str, star_count: int) -> None:
-    """Обновляет количество звезд"""
+    """Обновляет количество звезд для всех пользователей, отслеживающих репозиторий"""
     try:
         db = await _load_db()
-        if repo_key in db["repositories"]:
-            db["repositories"][repo_key]["last_star_count"] = star_count
-            await _save_db(db)
+        repos = await get_repositories_by_repo_key(repo_key)
+        for storage_key in repos.keys():
+            if storage_key in db["repositories"]:
+                db["repositories"][storage_key]["last_star_count"] = star_count
+        await _save_db(db)
     except Exception as e:
         logger.error(f"Ошибка обновления количества звезд: {e}")
 

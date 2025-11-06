@@ -13,7 +13,7 @@ def format_commit_message(
     owner, repo = repo_full_name.split("/", 1)
     repo_url = f"https://github.com/{owner}/{repo}"
     
-    text = f"🔧 On {html.code(f'{owner}/{repo}')}:{html.code(branch)} new commits!\n"
+    text = f"🔧 On {html.link(f'{owner}/{repo}', repo_url)}:{html.code(branch)} new commits!\n"
     text += f"{html.bold(f'{len(commits)} commits pushed.')}\n"
     
     if compare_url:

@@ -68,9 +68,20 @@ class PollingService:
         # Примечание: rate limit проверяется внутри GitHubClient при каждом запросе
         # Если лимит исчерпан, запросы будут пропускаться автоматически
         
-        for repo_key, repo_data in repos.items():
+        # Группируем репозитории по repo_key, чтобы не проверять один репозиторий несколько раз
+        repos_by_key: Dict[str, list] = {}
+        for storage_key, repo_data in repos.items():
+            repo_key = repo_data.get("repo_key", storage_key.split(":")[0])
+            if repo_key not in repos_by_key:
+                repos_by_key[repo_key] = []
+            repos_by_key[repo_key].append(repo_data)
+        
+        # Проверяем каждый уникальный репозиторий один раз
+        for repo_key, repo_data_list in repos_by_key.items():
             try:
-                await self._check_repository(repo_key, repo_data)
+                # Используем первый репозиторий для проверки (все они имеют одинаковый repo_key)
+                # Но отправляем уведомления всем пользователям
+                await self._check_repository(repo_key, repo_data_list)
                 # Добавляем задержку между проверками репозиториев
                 # чтобы не превысить rate limit
                 await asyncio.sleep(DELAY_BETWEEN_REPO_CHECKS)  # Увеличил до 2 секунд
@@ -79,13 +90,13 @@ class PollingService:
                 # Задержка даже при ошибке
                 await asyncio.sleep(DELAY_BETWEEN_REPO_CHECKS)
     
-    async def _check_repository(self, repo_key: str, repo_data: Dict[str, Any]) -> None:
-        """Проверяет конкретный репозиторий на изменения"""
+    async def _check_repository(self, repo_key: str, repo_data_list: list) -> None:
+        """Проверяет конкретный репозиторий на изменения для всех пользователей"""
         owner, repo = repo_key.split("/", 1)
-        events_config = repo_data.get("events", {})
-        chat_id = repo_data.get("chat_id")
-        # Используем токен из репозитория или глобальный из .env
-        repo_token = repo_data.get("github_token")
+        
+        # Используем токен из первого репозитория или глобальный из .env
+        first_repo_data = repo_data_list[0]
+        repo_token = first_repo_data.get("github_token")
         # Проверяем что токен не пустой (не None и не пустая строка)
         github_token = repo_token if repo_token and repo_token.strip() else GITHUB_TOKEN
         
@@ -95,43 +106,37 @@ class PollingService:
         
         github_client = GitHubClient(github_token)
         
-        # Проверяем коммиты
-        if events_config.get("commits", False):
-            await self._check_commits(github_client, repo_key, owner, repo, chat_id, repo_data)
+        # Проверяем коммиты для всех пользователей
+        await self._check_commits_for_all_users(github_client, repo_key, owner, repo, repo_data_list)
         
-        # Проверяем звезды
-        if events_config.get("watch", False):
-            await self._check_stars(github_client, repo_key, owner, repo, chat_id, repo_data)
+        # Проверяем звезды для всех пользователей
+        await self._check_stars_for_all_users(github_client, repo_key, owner, repo, repo_data_list)
         
-        # Проверяем форки
-        if events_config.get("forks", False):
-            await self._check_forks(github_client, repo_key, owner, repo, chat_id, repo_data)
+        # Проверяем форки для всех пользователей
+        await self._check_forks_for_all_users(github_client, repo_key, owner, repo, repo_data_list)
         
-        # Проверяем issues
-        issues_config = events_config.get("issues", {})
-        if any(issues_config.values()):
-            await self._check_issues(github_client, repo_key, owner, repo, chat_id, issues_config)
+        # Проверяем issues для всех пользователей
+        await self._check_issues_for_all_users(github_client, repo_key, owner, repo, repo_data_list)
         
-        # Проверяем pull requests
-        pr_config = events_config.get("pull_requests", {})
-        if any(pr_config.values()):
-            await self._check_pull_requests(github_client, repo_key, owner, repo, chat_id, pr_config)
+        # Проверяем pull requests для всех пользователей
+        await self._check_pull_requests_for_all_users(github_client, repo_key, owner, repo, repo_data_list)
         
         # Обновляем статистику
         stats = await github_client.get_statistics(owner, repo)
         await update_statistics(repo_key, stats)
     
-    async def _check_commits(
+    async def _check_commits_for_all_users(
         self,
         github_client: GitHubClient,
         repo_key: str,
         owner: str,
         repo: str,
-        chat_id: int,
-        repo_data: Dict[str, Any]
+        repo_data_list: list
     ) -> None:
-        """Проверяет новые коммиты"""
-        last_commit_sha = repo_data.get("last_commit_sha")
+        """Проверяет новые коммиты для всех пользователей"""
+        # Используем last_commit_sha из первого репозитория (они должны быть одинаковыми)
+        first_repo_data = repo_data_list[0]
+        last_commit_sha = first_repo_data.get("last_commit_sha")
         
         # Получаем последние коммиты
         commits = await github_client.get_commits(owner, repo, per_page=10)
@@ -156,22 +161,32 @@ class PollingService:
             default_branch = repo_info.get("default_branch", "main") if repo_info else "main"
             
             text = format_commit_message(repo_key, default_branch, new_commits)
-            await self.bot.send_message(chat_id=chat_id, text=text)
+            
+            # Отправляем уведомление всем пользователям, у которых включены коммиты
+            for repo_data in repo_data_list:
+                events_config = repo_data.get("events", {})
+                if events_config.get("commits", False):
+                    chat_id = repo_data.get("chat_id")
+                    try:
+                        await self.bot.send_message(chat_id=chat_id, text=text)
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
             
             # Обновляем SHA последнего коммита
             await update_last_commit_sha(repo_key, new_commits[0].get("sha", ""))
     
-    async def _check_stars(
+    async def _check_stars_for_all_users(
         self,
         github_client: GitHubClient,
         repo_key: str,
         owner: str,
         repo: str,
-        chat_id: int,
-        repo_data: Dict[str, Any]
+        repo_data_list: list
     ) -> None:
-        """Проверяет новые звезды"""
-        last_star_count = repo_data.get("last_star_count", 0)
+        """Проверяет новые звезды для всех пользователей"""
+        # Используем last_star_count из первого репозитория (они должны быть одинаковыми)
+        first_repo_data = repo_data_list[0]
+        last_star_count = first_repo_data.get("last_star_count", 0)
         
         # Получаем текущее количество звезд
         current_star_count = await github_client.get_star_count(owner, repo)
@@ -186,21 +201,29 @@ class PollingService:
                 user_name = user.get("name")
                 
                 text = format_star_message(repo_key, user_login, user_name, current_star_count)
-                await self.bot.send_message(chat_id=chat_id, text=text)
+                
+                # Отправляем уведомление всем пользователям, у которых включены звезды
+                for repo_data in repo_data_list:
+                    events_config = repo_data.get("events", {})
+                    if events_config.get("watch", False):
+                        chat_id = repo_data.get("chat_id")
+                        try:
+                            await self.bot.send_message(chat_id=chat_id, text=text)
+                        except Exception as e:
+                            logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
             
             # Обновляем количество звезд
             await update_last_star_count(repo_key, current_star_count)
     
-    async def _check_forks(
+    async def _check_forks_for_all_users(
         self,
         github_client: GitHubClient,
         repo_key: str,
         owner: str,
         repo: str,
-        chat_id: int,
-        repo_data: Dict[str, Any]
+        repo_data_list: list
     ) -> None:
-        """Проверяет новые форки"""
+        """Проверяет новые форки для всех пользователей"""
         # Получаем последние форки
         forks = await github_client.get_forks(owner, repo, per_page=5)
         
@@ -209,45 +232,41 @@ class PollingService:
             # Для простоты пропускаем, так как это требует дополнительного хранения
             pass
     
-    async def _check_issues(
+    async def _check_issues_for_all_users(
         self,
         github_client: GitHubClient,
         repo_key: str,
         owner: str,
         repo: str,
-        chat_id: int,
-        issues_config: Dict[str, bool]
+        repo_data_list: list
     ) -> None:
-        """Проверяет новые issues"""
+        """Проверяет новые issues для всех пользователей"""
         # Получаем открытые issues
         issues = await github_client.get_issues(owner, repo, state="open", per_page=10)
         
         for issue in issues:
             # Проверяем, нужно ли отслеживать это действие
             # Для polling мы проверяем только открытые issues
-            if issues_config.get("opened", False):
-                # Здесь можно добавить логику проверки новых issues
-                # Для простоты пропускаем, так как это требует дополнительного хранения
-                pass
+            # Здесь можно добавить логику проверки новых issues
+            # Для простоты пропускаем, так как это требует дополнительного хранения
+            pass
     
-    async def _check_pull_requests(
+    async def _check_pull_requests_for_all_users(
         self,
         github_client: GitHubClient,
         repo_key: str,
         owner: str,
         repo: str,
-        chat_id: int,
-        pr_config: Dict[str, bool]
+        repo_data_list: list
     ) -> None:
-        """Проверяет новые pull requests"""
+        """Проверяет новые pull requests для всех пользователей"""
         # Получаем открытые PR
         prs = await github_client.get_pull_requests(owner, repo, state="open", per_page=10)
         
         for pr in prs:
             # Проверяем, нужно ли отслеживать это действие
             # Для polling мы проверяем только открытые PR
-            if pr_config.get("opened", False):
-                # Здесь можно добавить логику проверки новых PR
-                # Для простоты пропускаем, так как это требует дополнительного хранения
-                pass
+            # Здесь можно добавить логику проверки новых PR
+            # Для простоты пропускаем, так как это требует дополнительного хранения
+            pass
 

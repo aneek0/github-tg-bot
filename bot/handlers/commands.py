@@ -63,20 +63,16 @@ async def cmd_add(message: Message, command: Command) -> None:
         await message.answer(f"❌ Репозиторий {html.code(repo_key)} не найден или недоступен.")
         return
     
-    # Проверяем, не добавлен ли уже
-    existing_repo = await get_repository(repo_key)
+    # Проверяем, не добавлен ли уже этим пользователем
+    existing_repo = await get_repository(repo_key, message.chat.id)
     if existing_repo:
-        if existing_repo.get("chat_id") == message.chat.id:
-            await message.answer(f"⚠️ Репозиторий {html.code(repo_key)} уже добавлен.")
-            return
-        else:
-            await message.answer(f"⚠️ Репозиторий {html.code(repo_key)} уже отслеживается другим пользователем.")
-            return
+        await message.answer(f"⚠️ Репозиторий {html.code(repo_key)} уже добавлен.")
+        return
     
     # Добавляем репозиторий
     success = await add_repository(repo_key, message.chat.id)
     if success:
-        repo_data = await get_repository(repo_key)
+        repo_data = await get_repository(repo_key, message.chat.id)
         events = repo_data.get("events", {}) if repo_data else {}
         await message.answer(
             f"✅ Репозиторий {html.code(repo_key)} успешно добавлен!\n\n"
@@ -109,15 +105,10 @@ async def cmd_remove(message: Message, command: Command) -> None:
     owner, repo = parsed
     repo_key = get_repo_key(owner, repo)
     
-    # Проверяем, существует ли репозиторий в базе
-    existing_repo = await get_repository(repo_key)
+    # Проверяем, существует ли репозиторий в базе для этого пользователя
+    existing_repo = await get_repository(repo_key, message.chat.id)
     if not existing_repo:
         await message.answer(f"❌ Репозиторий {html.code(repo_key)} не найден в списке отслеживаемых.")
-        return
-    
-    # Проверяем права доступа
-    if existing_repo.get("chat_id") != message.chat.id:
-        await message.answer("❌ Вы не можете удалить этот репозиторий.")
         return
     
     # Показываем подтверждение через inline кнопку
@@ -200,15 +191,10 @@ async def cmd_settings(message: Message, command: Command) -> None:
     owner, repo = parsed
     repo_key = get_repo_key(owner, repo)
     
-    # Проверяем, существует ли репозиторий
-    repo_data = await get_repository(repo_key)
+    # Проверяем, существует ли репозиторий для этого пользователя
+    repo_data = await get_repository(repo_key, message.chat.id)
     if not repo_data:
         await message.answer(f"❌ Репозиторий {html.code(repo_key)} не найден в списке отслеживаемых.")
-        return
-    
-    # Проверяем права доступа
-    if repo_data.get("chat_id") != message.chat.id:
-        await message.answer("❌ Вы не можете настраивать этот репозиторий.")
         return
     
     events = repo_data.get("events", {})

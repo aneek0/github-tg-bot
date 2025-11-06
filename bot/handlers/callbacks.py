@@ -195,7 +195,8 @@ async def settings_confirm_remove(callback: CallbackQuery, callback_data: Settin
         return
     
     repo_key, _ = result
-    success = await remove_repository(repo_key)
+    chat_id = callback.message.chat.id
+    success = await remove_repository(repo_key, chat_id)
     if success:
         await callback.message.edit_text(f"✅ Репозиторий {html.code(repo_key)} удален.")
     else:
@@ -232,14 +233,15 @@ async def event_toggle(callback: CallbackQuery, callback_data: EventToggleCallba
     
     # Переключаем статус
     new_status = not current[final_key]
-    success = await update_event_status(repo_key, event_path, new_status)
+    chat_id = callback.message.chat.id
+    success = await update_event_status(repo_key, chat_id, event_path, new_status)
     
     if not success:
         await callback.answer("❌ Ошибка обновления статуса.", show_alert=True)
         return
     
     # Обновляем клавиатуру
-    repo_data = await get_repository(repo_key)
+    repo_data = await get_repository(repo_key, chat_id)
     events = repo_data.get("events", {})
     
     # Определяем, какую клавиатуру показывать
