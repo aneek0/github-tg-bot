@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram import html
 
-from bot.services.database import add_repository, get_repository
+from bot.services.database import add_repository, get_repository, get_chat_thread_id
 from bot.keyboards.inline import build_settings_keyboard
 from bot.utils.github import create_github_client
 from bot.utils.repository import get_repo_key
@@ -38,6 +38,15 @@ async def handle_github_url(message: Message) -> None:
         
         repo_key = get_repo_key(owner, repo)
         
+        # Проверяем thread_id для групп с топиками
+        thread_id = getattr(message, 'message_thread_id', None)
+        saved_thread_id = await get_chat_thread_id(message.chat.id)
+        
+        # Если это группа с топиками, проверяем что сообщение в правильном топике
+        if saved_thread_id is not None:
+            if thread_id != saved_thread_id:
+                continue  # Пропускаем сообщения из других топиков
+        
         # Проверяем, не добавлен ли уже этим пользователем
         existing_repo = await get_repository(repo_key, message.chat.id)
         if existing_repo:
@@ -55,8 +64,11 @@ async def handle_github_url(message: Message) -> None:
             )
             continue
         
+        # Используем saved_thread_id если он есть, иначе текущий thread_id
+        thread_id_to_use = saved_thread_id if saved_thread_id is not None else thread_id
+        
         # Добавляем репозиторий
-        success = await add_repository(repo_key, message.chat.id)
+        success = await add_repository(repo_key, message.chat.id, thread_id=thread_id_to_use)
         if success:
             repo_data = await get_repository(repo_key, message.chat.id)
             events = repo_data.get("events", {}) if repo_data else {}

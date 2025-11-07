@@ -8,7 +8,9 @@ from bot.services.database import (
     add_repository,
     get_user_repositories,
     get_repository,
-    get_all_statistics
+    get_all_statistics,
+    set_chat_thread_id,
+    get_chat_thread_id
 )
 from bot.services.formatter import format_stats_message
 from bot.keyboards.inline import build_settings_keyboard
@@ -22,22 +24,55 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     """Обработчик команды /start"""
-    await message.answer(
-        f"Привет, {html.bold(message.from_user.full_name)}! 👋\n\n"
-        "Я бот для отслеживания событий GitHub репозиториев.\n\n"
-        "Доступные команды:\n"
-        "• /add owner/repo - добавить репозиторий\n"
-        "• /remove owner/repo - удалить репозиторий\n"
-        "• /list - список отслеживаемых репозиториев\n"
-        "• /stats - статистика по репозиториям\n"
-        "• /settings owner repo - настройки репозитория\n\n"
-        "Также можно просто отправить ссылку на GitHub репозиторий!"
-    )
+    # Сохраняем thread_id если команда выполнена в топике группы
+    thread_id = getattr(message, 'message_thread_id', None)
+    if thread_id is not None:
+        await set_chat_thread_id(message.chat.id, thread_id)
+        response_text = (
+            f"Привет, {html.bold(message.from_user.full_name)}! 👋\n\n"
+            "Я бот для отслеживания событий GitHub репозиториев.\n\n"
+            f"✅ Бот настроен для работы в этом топике (ID: {thread_id}).\n"
+            "Все уведомления будут приходить сюда.\n\n"
+            "Доступные команды:\n"
+            "• /add owner/repo - добавить репозиторий\n"
+            "• /remove owner/repo - удалить репозиторий\n"
+            "• /list - список отслеживаемых репозиториев\n"
+            "• /stats - статистика по репозиториям\n"
+            "• /settings owner repo - настройки репозитория\n\n"
+            "Также можно просто отправить ссылку на GitHub репозиторий!"
+        )
+    else:
+        response_text = (
+            f"Привет, {html.bold(message.from_user.full_name)}! 👋\n\n"
+            "Я бот для отслеживания событий GitHub репозиториев.\n\n"
+            "Доступные команды:\n"
+            "• /add owner/repo - добавить репозиторий\n"
+            "• /remove owner/repo - удалить репозиторий\n"
+            "• /list - список отслеживаемых репозиториев\n"
+            "• /stats - статистика по репозиториям\n"
+            "• /settings owner repo - настройки репозитория\n\n"
+            "Также можно просто отправить ссылку на GitHub репозиторий!"
+        )
+    
+    await message.answer(response_text)
 
 
 @router.message(Command("add"))
 async def cmd_add(message: Message, command: Command) -> None:
     """Обработчик команды /add"""
+    # Проверяем thread_id для групп с топиками
+    thread_id = getattr(message, 'message_thread_id', None)
+    saved_thread_id = await get_chat_thread_id(message.chat.id)
+    
+    # Если это группа с топиками, проверяем что команда выполняется в правильном топике
+    if saved_thread_id is not None:
+        if thread_id != saved_thread_id:
+            await message.answer(
+                "⚠️ Команды должны выполняться в том же топике, где был выполнен /start.\n"
+                f"Используйте /start в нужном топике для настройки бота."
+            )
+            return
+    
     if not command.args:
         await message.answer(
             "Использование: /add owner/repo\n"
@@ -69,8 +104,11 @@ async def cmd_add(message: Message, command: Command) -> None:
         await message.answer(f"⚠️ Репозиторий {html.code(repo_key)} уже добавлен.")
         return
     
+    # Используем saved_thread_id если он есть, иначе текущий thread_id
+    thread_id_to_use = saved_thread_id if saved_thread_id is not None else thread_id
+    
     # Добавляем репозиторий
-    success = await add_repository(repo_key, message.chat.id)
+    success = await add_repository(repo_key, message.chat.id, thread_id=thread_id_to_use)
     if success:
         repo_data = await get_repository(repo_key, message.chat.id)
         events = repo_data.get("events", {}) if repo_data else {}
@@ -86,6 +124,19 @@ async def cmd_add(message: Message, command: Command) -> None:
 @router.message(Command("remove"))
 async def cmd_remove(message: Message, command: Command) -> None:
     """Обработчик команды /remove"""
+    # Проверяем thread_id для групп с топиками
+    thread_id = getattr(message, 'message_thread_id', None)
+    saved_thread_id = await get_chat_thread_id(message.chat.id)
+    
+    # Если это группа с топиками, проверяем что команда выполняется в правильном топике
+    if saved_thread_id is not None:
+        if thread_id != saved_thread_id:
+            await message.answer(
+                "⚠️ Команды должны выполняться в том же топике, где был выполнен /start.\n"
+                f"Используйте /start в нужном топике для настройки бота."
+            )
+            return
+    
     if not command.args:
         await message.answer(
             "Использование: /remove owner/repo\n"
@@ -122,6 +173,19 @@ async def cmd_remove(message: Message, command: Command) -> None:
 @router.message(Command("list"))
 async def cmd_list(message: Message) -> None:
     """Обработчик команды /list"""
+    # Проверяем thread_id для групп с топиками
+    thread_id = getattr(message, 'message_thread_id', None)
+    saved_thread_id = await get_chat_thread_id(message.chat.id)
+    
+    # Если это группа с топиками, проверяем что команда выполняется в правильном топике
+    if saved_thread_id is not None:
+        if thread_id != saved_thread_id:
+            await message.answer(
+                "⚠️ Команды должны выполняться в том же топике, где был выполнен /start.\n"
+                f"Используйте /start в нужном топике для настройки бота."
+            )
+            return
+    
     repos = await get_user_repositories(message.chat.id)
     
     if not repos:
@@ -140,6 +204,19 @@ async def cmd_list(message: Message) -> None:
 @router.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
     """Обработчик команды /stats"""
+    # Проверяем thread_id для групп с топиками
+    thread_id = getattr(message, 'message_thread_id', None)
+    saved_thread_id = await get_chat_thread_id(message.chat.id)
+    
+    # Если это группа с топиками, проверяем что команда выполняется в правильном топике
+    if saved_thread_id is not None:
+        if thread_id != saved_thread_id:
+            await message.answer(
+                "⚠️ Команды должны выполняться в том же топике, где был выполнен /start.\n"
+                f"Используйте /start в нужном топике для настройки бота."
+            )
+            return
+    
     user_repos = await get_user_repositories(message.chat.id)
     
     if not user_repos:
@@ -161,6 +238,19 @@ async def cmd_stats(message: Message) -> None:
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, command: Command) -> None:
     """Обработчик команды /settings"""
+    # Проверяем thread_id для групп с топиками
+    thread_id = getattr(message, 'message_thread_id', None)
+    saved_thread_id = await get_chat_thread_id(message.chat.id)
+    
+    # Если это группа с топиками, проверяем что команда выполняется в правильном топике
+    if saved_thread_id is not None:
+        if thread_id != saved_thread_id:
+            await message.answer(
+                "⚠️ Команды должны выполняться в том же топике, где был выполнен /start.\n"
+                f"Используйте /start в нужном топике для настройки бота."
+            )
+            return
+    
     if not command.args:
         # Показываем список репозиториев пользователя
         from bot.services.database import get_all_repositories

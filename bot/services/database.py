@@ -49,13 +49,17 @@ async def _load_db() -> Dict[str, Any]:
     async with _lock:
         try:
             if not DB_PATH.exists():
-                return {"repositories": {}, "statistics": {}}
+                return {"repositories": {}, "statistics": {}, "chat_threads": {}}
             async with aiofiles.open(DB_PATH, "r", encoding="utf-8") as f:
                 content = await f.read()
-                return json.loads(content) if content.strip() else {"repositories": {}, "statistics": {}}
+                data = json.loads(content) if content.strip() else {"repositories": {}, "statistics": {}, "chat_threads": {}}
+                # Добавляем chat_threads если его нет (для обратной совместимости)
+                if "chat_threads" not in data:
+                    data["chat_threads"] = {}
+                return data
         except Exception as e:
             logger.error(f"Ошибка загрузки БД: {e}")
-            return {"repositories": {}, "statistics": {}}
+            return {"repositories": {}, "statistics": {}, "chat_threads": {}}
 
 
 async def _save_db(data: Dict[str, Any]) -> None:
@@ -74,7 +78,7 @@ def _get_repo_storage_key(repo_key: str, chat_id: int) -> str:
     return f"{repo_key}:{chat_id}"
 
 
-async def add_repository(repo_key: str, chat_id: int, github_token: Optional[str] = None) -> bool:
+async def add_repository(repo_key: str, chat_id: int, github_token: Optional[str] = None, thread_id: Optional[int] = None) -> bool:
     """Добавляет репозиторий в базу данных"""
     try:
         db = await _load_db()
@@ -87,11 +91,18 @@ async def add_repository(repo_key: str, chat_id: int, github_token: Optional[str
         db["repositories"][storage_key] = {
             "repo_key": repo_key,
             "chat_id": chat_id,
+            "thread_id": thread_id,
             "events": get_default_events(),
             "last_commit_sha": None,
             "last_star_count": 0,
             "github_token": github_token
         }
+        
+        # Сохраняем thread_id для чата, если он указан
+        if thread_id is not None:
+            if "chat_threads" not in db:
+                db["chat_threads"] = {}
+            db["chat_threads"][str(chat_id)] = thread_id
         
         if repo_key not in db["statistics"]:
             db["statistics"][repo_key] = {
@@ -295,4 +306,29 @@ async def get_all_statistics() -> Dict[str, Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Ошибка получения всей статистики: {e}")
         return {}
+
+
+async def set_chat_thread_id(chat_id: int, thread_id: Optional[int]) -> None:
+    """Сохраняет thread_id для чата (для групп с топиками)"""
+    try:
+        db = await _load_db()
+        if "chat_threads" not in db:
+            db["chat_threads"] = {}
+        db["chat_threads"][str(chat_id)] = thread_id
+        await _save_db(db)
+    except Exception as e:
+        logger.error(f"Ошибка сохранения thread_id: {e}")
+
+
+async def get_chat_thread_id(chat_id: int) -> Optional[int]:
+    """Получает thread_id для чата"""
+    try:
+        db = await _load_db()
+        if "chat_threads" not in db:
+            return None
+        thread_id = db["chat_threads"].get(str(chat_id))
+        return thread_id if thread_id is not None else None
+    except Exception as e:
+        logger.error(f"Ошибка получения thread_id: {e}")
+        return None
 

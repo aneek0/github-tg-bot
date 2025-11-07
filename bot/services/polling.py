@@ -167,8 +167,13 @@ class PollingService:
                 events_config = repo_data.get("events", {})
                 if events_config.get("commits", False):
                     chat_id = repo_data.get("chat_id")
+                    thread_id = repo_data.get("thread_id")
                     try:
-                        await self.bot.send_message(chat_id=chat_id, text=text)
+                        await self.bot.send_message(
+                            chat_id=chat_id,
+                            text=text,
+                            message_thread_id=thread_id
+                        )
                     except Exception as e:
                         logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
             
@@ -207,8 +212,13 @@ class PollingService:
                     events_config = repo_data.get("events", {})
                     if events_config.get("watch", False):
                         chat_id = repo_data.get("chat_id")
+                        thread_id = repo_data.get("thread_id")
                         try:
-                            await self.bot.send_message(chat_id=chat_id, text=text)
+                            await self.bot.send_message(
+                                chat_id=chat_id,
+                                text=text,
+                                message_thread_id=thread_id
+                            )
                         except Exception as e:
                             logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
             

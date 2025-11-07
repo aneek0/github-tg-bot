@@ -122,8 +122,14 @@ async def handle_push_event_for_all_users(
         events_config = repo_data.get("events", {})
         if events_config.get("commits", False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                # Используем message_thread_id если он есть (для групп с топиками)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
     
@@ -154,8 +160,13 @@ async def handle_watch_event_for_all_users(
         events_config = repo_data.get("events", {})
         if events_config.get("watch", False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
     
@@ -181,8 +192,13 @@ async def handle_fork_event_for_all_users(
         events_config = repo_data.get("events", {})
         if events_config.get("forks", False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
@@ -205,8 +221,13 @@ async def handle_issue_event_for_all_users(
         issues_config = events_config.get("issues", {})
         if issues_config.get(action, False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
@@ -230,8 +251,13 @@ async def handle_issue_comment_event_for_all_users(
         issue_comments_config = events_config.get("issue_comments", {})
         if issue_comments_config.get(action, False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
@@ -254,8 +280,13 @@ async def handle_pull_request_event_for_all_users(
         pr_config = events_config.get("pull_requests", {})
         if pr_config.get(action, False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
@@ -279,8 +310,13 @@ async def handle_pull_request_comment_event_for_all_users(
         pr_comments_config = events_config.get("pull_request_comments", {})
         if pr_comments_config.get(action, False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
@@ -303,8 +339,13 @@ async def handle_release_event_for_all_users(
         releases_config = events_config.get("releases", {})
         if releases_config.get(action, False):
             chat_id = repo_data.get("chat_id")
+            thread_id = repo_data.get("thread_id")
             try:
-                await bot.send_message(chat_id=chat_id, text=text)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
+                    message_thread_id=thread_id
+                )
             except Exception as e:
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
