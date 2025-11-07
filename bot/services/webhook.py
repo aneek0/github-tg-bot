@@ -350,14 +350,14 @@ async def handle_release_event_for_all_users(
                 logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
 
 
-def create_webhook_app(bot: Bot, webhook_secret: str, webhook_path: str) -> web.Application:
-    """Создает aiohttp приложение для обработки webhook"""
+def create_webhook_app(bot: Bot, webhook_secret: str, github_webhook_path: str = "/webhook/github") -> web.Application:
+    """Создает aiohttp приложение для обработки GitHub webhook"""
     app = web.Application()
     
-    async def webhook_handler(request: web.Request) -> web.Response:
+    async def github_webhook_handler(request: web.Request) -> web.Response:
         return await handle_webhook(request, bot, webhook_secret)
     
-    app.router.add_post(webhook_path, webhook_handler)
+    app.router.add_post(github_webhook_path, github_webhook_handler)
     
     return app
 

@@ -45,8 +45,11 @@ GITHUB_TOKEN=your_github_token  # Опционально, для приватн�
 # GITHUB_TOKEN=token1;token2;token3
 MODE=polling  # или webhook
 WEBHOOK_URL=https://yourdomain.com  # Только для webhook
-WEBHOOK_SECRET=your_webhook_secret  # Только для webhook
-WEBHOOK_PATH=/webhook  # Только для webhook
+WEBHOOK_SECRET=your_webhook_secret  # Только для webhook (используется и для Telegram, и для GitHub)
+WEBHOOK_PATH=/webhook  # Путь для Telegram webhook (только для webhook)
+GITHUB_WEBHOOK_PATH=/webhook/github  # Путь для GitHub webhook (только для webhook, по умолчанию /webhook/github)
+WEBHOOK_HOST=0.0.0.0  # Хост для HTTP сервера (только для webhook, по умолчанию 0.0.0.0)
+WEBHOOK_PORT=8080  # Порт для HTTP сервера (только для webhook, по умолчанию 8080)
 POLLING_INTERVAL=60  # Интервал проверки в секундах (только для polling)
 ```
 
@@ -166,7 +169,7 @@ github-tg-bot/
    - Перейдите в настройки репозитория → **Settings** → **Webhooks**
    - Нажмите **"Add webhook"**
    - Заполните форму:
-     - **Payload URL**: `https://yourdomain.com/webhook` (или ваш `WEBHOOK_URL` + `WEBHOOK_PATH`)
+     - **Payload URL**: `https://yourdomain.com/webhook/github` (по умолчанию, можно изменить через `GITHUB_WEBHOOK_PATH` в `.env`)
      - **Content type**: `application/json`
      - **Secret**: ваш `WEBHOOK_SECRET` из `.env`
      - **Events**: выберите события, которые хотите отслеживать:

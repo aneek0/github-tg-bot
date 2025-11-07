@@ -13,7 +13,6 @@ from aiogram.types import BotCommand
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from bot.handlers import commands, callbacks, messages
-from bot.services.webhook import create_webhook_app
 from bot.services.polling import PollingService
 from bot.utils.constants import RATE_LIMIT_WITH_TOKEN
 from bot.services.github import set_global_bot
@@ -144,10 +143,10 @@ async def run_webhook() -> None:
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
     
-    # Создаем webhook приложение
-    webhook_app = create_webhook_app(bot, WEBHOOK_SECRET, WEBHOOK_PATH)
+    # Создаем aiohttp приложение
+    webhook_app = web.Application()
     
-    # Настраиваем webhook handler
+    # Настраиваем Telegram webhook handler
     webhook_requests_handler = SimpleRequestHandler(
         dispatcher=dp,
         bot=bot,
@@ -156,10 +155,19 @@ async def run_webhook() -> None:
     webhook_requests_handler.register(webhook_app, path=WEBHOOK_PATH)
     setup_application(webhook_app, dp, bot=bot)
     
-    # Устанавливаем webhook
-    webhook_url = f"{WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH}"
-    await bot.set_webhook(webhook_url, secret_token=WEBHOOK_SECRET if WEBHOOK_SECRET else None)
-    logger.info(f"Webhook установлен: {webhook_url}")
+    # Добавляем GitHub webhook handler на отдельный путь
+    GITHUB_WEBHOOK_PATH = os.getenv("GITHUB_WEBHOOK_PATH", "/webhook/github")
+    async def github_webhook_handler(request: web.Request) -> web.Response:
+        from bot.services.webhook import handle_webhook
+        return await handle_webhook(request, bot, WEBHOOK_SECRET)
+    
+    webhook_app.router.add_post(GITHUB_WEBHOOK_PATH, github_webhook_handler)
+    
+    # Устанавливаем Telegram webhook
+    telegram_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH}"
+    await bot.set_webhook(telegram_webhook_url, secret_token=WEBHOOK_SECRET if WEBHOOK_SECRET else None)
+    logger.info(f"Telegram webhook установлен: {telegram_webhook_url}")
+    logger.info(f"GitHub webhook путь: {GITHUB_WEBHOOK_PATH}")
     
     # Запускаем polling сервис в фоне (для проверки изменений)
     polling_service = PollingService(bot, POLLING_INTERVAL)
